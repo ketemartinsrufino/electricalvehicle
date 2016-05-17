@@ -1,8 +1,8 @@
 globals
 [
-  demanda    ; lista com os percentuais de carros na rua
-  hora       ; hora do dia
-  horas_pico ; horas do dia em que ha maior uso
+  demanda-carros-fora  ; lista com os percentuais de carros fora de casa
+  hora                    ; hora do dia
+  horas_pico              ; horas do dia em que ha maior uso
 
 ]
 
@@ -11,6 +11,7 @@ transformadores-own
 [
   carga-max
   carga-atual
+  posicao
 ]
 
 breed [casas casa]
@@ -33,10 +34,10 @@ to setup
   clear-all
 
   set hora 0
-    ;hora dia [ 0 1 2 3 4  5  6  7  8  9 10  11  12  13 14 15 16 17 18 19 20 21 22 23]
-  set demanda [10 5 5 3 3 10 50 60 80 85 90 100 100 100 90 93 95 96 99 90 60 50 45 20]
+                ;hora dia [ 0 1 2 3 4 5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23]
+  set demanda-carros-fora [ 3 3 2 2 3 5 30 40 50 60 70 85 75 60 80 93 95 96 99 90 60 50 45 20]
 
-  set-patch-size 8
+  set-patch-size 5
   ask patches [set pcolor white]
 
   let x min-pxcor
@@ -59,12 +60,23 @@ to setup
     set y y + tamanho-da-quadra
   ]
 
+  ; to-report carro-pode-sair
+  ; let todos-carros count carros
+  ; let carros-fora count carros with [localização = "fora"]
+  ;  let carros-fora-percent (carros-fora / todos-carros) * 100
+
+;    report carros-fora-percent <= item hora demanda-carros-fora
+ ; end
+
   create-transformadores número-de-transformadores
   [
     setxy round random-xcor round random-ycor
-    set size 9
+    set size 8
     set shape "dot"
     set color red
+    set carga-max 3000
+    set label carga-atual
+
     ifelse random 2 = 0
     [
       set xcor xcor - remainder xcor tamanho-da-quadra
@@ -80,16 +92,19 @@ to setup
     let yd 0
     setxy round random-xcor round random-ycor
     set color yellow
+    set estado "desligado"
     set shape "car"
     set size 3
     set carga-max 10 + random 100
     set media-consumo-diario random 60
 
     set carga-armazenada 20 + random 40     ; [Artigo] A random state of charge between 20% and 60% is assigned to each vehicle
+
     if carga-armazenada <= media-consumo-diario
     [
       set color blue
       set estado "carregando"
+      set localização "em casa"
     ]
 
     if carga-armazenada = carga-max
@@ -98,10 +113,6 @@ to setup
       set estado "carregado"
     ]
 
-    set label carga-armazenada
-    set label media-consumo-diario
-    ;set label-color red
-
     hatch-casas 1
     [
       set color orange
@@ -109,19 +120,32 @@ to setup
       set size 4
     ]
 
+    let carga-carro carga-armazenada
     let transformador-mais-próximo min-one-of transformadores [distance myself]
+    ask transformador-mais-próximo [
+      set carga-atual carga-atual + carga-carro
+    ]
     create-link-to transformador-mais-próximo
     [
       set color blue
     ]
-    ifelse random 100 <= item hora demanda
+
+    ;--------------------
+      let carros-fora count carros with [localização = "fora"]
+  let carros-fora-percent (carros-fora / count carros) * 100
+  let carro-pode-sair (carros-fora-percent <= item hora demanda-carros-fora)
+
+    ifelse carro-pode-sair
     [
       hide-turtle
       set localização "fora"
+      set estado "descarregando"
     ]
     [
       set localização "em casa"
     ]
+    ;--------------------
+
   ]
 
   reset-ticks
@@ -129,7 +153,7 @@ end
 
 to go
 
-  if hora > 23
+  if hora >= 23
   [
     set hora 0
   ]
@@ -139,43 +163,51 @@ to go
     set hora hora + 1
   ]
 
-  let numCarCasa count carros with [localização = "em casa"]
-  let percentCarrosEmCasa numCarCasa / count carros * 100
 
-  ; while [ percentCarrosEmCasa < item hora demanda ]
-  ; [
-   set numCarCasa count carros with [localização = "em casa"]
-   set percentCarrosEmCasa numCarCasa / count carros * 100
+  let carros-fora count carros with [localização = "fora"]
+  let carros-fora-percent (carros-fora / count carros) * 100
+  let carro-pode-sair (carros-fora-percent <= item hora demanda-carros-fora)
 
-   ifelse percentCarrosEmCasa >= item hora demanda
+  ifelse carro-pode-sair
    [
-     ask one-of carros with [localização = "em casa"]
-     [
-       set localização "fora"
-       hide-turtle
-     ]
-   ]
-   [
-     ask one-of carros with [localização = "fora"]
-     [
-       set localização "em casa"
-       show-turtle
-       set carga-armazenada 10 + random 21
-     ]
-   ]
-  ;]
+    ask one-of carros with [localização = "em casa"]
+    [
+      set localização "fora"
+      hide-turtle
+    ]
+  ]
+  [
+    ask one-of carros with [localização = "fora"]
+    [
+      set localização "em casa"
+      show-turtle
+    ]
+  ]
 
+  let diferenca 10
   ask carros with [localização = "em casa"]
   [
     ; Se a carga armazenada eh menor que a media de consumo diario e menor que carga max, entao carregue o veiculo.
-    ifelse carga-armazenada <= media-consumo-diario and carga-armazenada < carga-max
+
+    let precisa-carregar carga-armazenada <= media-consumo-diario and carga-armazenada < carga-max
+
+    ifelse precisa-carregar
     [
-      set carga-armazenada carga-armazenada + 1
+      set carga-armazenada carga-armazenada + diferenca
       set color blue
       set label carga-armazenada
+
+      if estado != "carregando" [
+        let transformador-mais-próximo min-one-of transformadores [distance myself]
+        ask transformador-mais-próximo [
+          set carga-atual carga-atual + diferenca
+        ]
+        set estado "carregando"
+      ]
     ]
     [
       set color yellow
+      set estado "desligado"
     ]
 
     if carga-armazenada = carga-max
@@ -187,8 +219,19 @@ to go
 
   ask carros with [localização = "fora"]
   [
+
     hide-turtle
-    set carga-armazenada carga-armazenada - 10
+    set carga-armazenada carga-armazenada - diferenca
+
+    if estado != "descarregando" [
+      let transformador-mais-próximo min-one-of transformadores [distance myself]
+      ask transformador-mais-próximo [
+        set carga-atual carga-atual - diferenca
+      ]
+    ]
+
+    set estado "descarregando"
+
   ]
 
   if ticks >= 5 * 1440
@@ -199,13 +242,13 @@ to go
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-278
-10
-1120
-873
+480
+12
+1050
+593
 -1
 -1
-8.0
+5.0
 1
 15
 1
@@ -216,9 +259,9 @@ GRAPHICS-WINDOW
 0
 1
 0
-103
+111
 0
-103
+109
 1
 1
 1
@@ -226,10 +269,10 @@ ticks
 30.0
 
 BUTTON
-17
-214
-94
-247
+191
+13
+268
+46
 NIL
 setup
 NIL
@@ -243,10 +286,10 @@ NIL
 1
 
 BUTTON
-17
-258
-94
-291
+191
+50
+268
+83
 go-once
 go
 NIL
@@ -260,10 +303,10 @@ NIL
 1
 
 BUTTON
-17
-304
-80
-337
+193
+90
+268
+123
 NIL
 go
 T
@@ -277,73 +320,73 @@ NIL
 1
 
 SLIDER
-21
-18
-193
-51
+7
+12
+179
+45
 tamanho-da-quadra
 tamanho-da-quadra
 4
 10
-7
+4
 1
 1
 NIL
 HORIZONTAL
 
 SLIDER
-21
-67
-194
-100
+9
+88
+182
+121
 número-de-transformadores
 número-de-transformadores
 5
 50
-20
+5
 5
 1
 NIL
 HORIZONTAL
 
 SLIDER
-25
-117
-197
-150
+8
+50
+180
+83
 número-de-casas
 número-de-casas
 5
 100
-60
+10
 5
 1
 NIL
 HORIZONTAL
 
 PLOT
-18
-356
-218
-506
+14
+247
+186
+382
 Carros carregando
-NIL
-NIL
+hora
+carros
 0.0
-10.0
+46.0
 0.0
 10.0
 true
 false
 "" ""
 PENS
-"default" 1.0 0 -16777216 true "" "plot count carros with [estado = \"carregando\"]"
+"default" 1.0 0 -16777216 true "" "plotxy hora (count carros with [estado = \"carregando\"])"
 
 MONITOR
-128
-294
-185
-339
+272
+79
+329
+124
 hora
 hora
 17
@@ -351,22 +394,106 @@ hora
 11
 
 PLOT
-29
-536
-229
-686
+193
+246
+371
+382
 Carros em casa
-NIL
-NIL
+hora
+carros
 0.0
-10.0
+46.0
 0.0
 10.0
 true
 false
 "" ""
 PENS
-"default" 1.0 0 -16777216 true "" "plot count carros with [localização = \"em casa\"]"
+"default" 1.0 0 -16777216 true "" "plotxy hora count carros with [localização = \"em casa\"]"
+
+PLOT
+10
+389
+381
+541
+Carga Transformador/Tempo
+hora
+carga
+0.0
+46.0
+0.0
+3000.0
+true
+true
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plotxy hora sum[carga-atual] of transformadores"
+
+MONITOR
+95
+131
+173
+176
+Carregando
+count carros with [estado = \"carregando\"]
+17
+1
+11
+
+MONITOR
+10
+131
+89
+176
+Carregado
+count carros with [estado = \"carregado\"]
+17
+1
+11
+
+MONITOR
+175
+130
+267
+175
+Descarregando
+count carros with [estado = \"descarregando\"]
+17
+1
+11
+
+MONITOR
+13
+195
+70
+240
+Casa
+count carros with [localização = \"em casa\"]
+17
+1
+11
+
+MONITOR
+269
+130
+343
+175
+Desligado
+count carros with [estado = \"desligado\"]
+17
+1
+11
+
+MONITOR
+74
+194
+131
+239
+fora
+count carros with [localização = \"fora\"]
+17
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
