@@ -181,7 +181,7 @@ to go
   [
     ; Se a carga armazenada eh menor que a media de consumo diario e menor que carga max, entao carregue o veiculo.
 
-    let precisa-carregar carga-armazenada <= media-consumo-diario and carga-armazenada < carga-max
+    let precisa-carregar carga-armazenada < carga-max
 
     ifelse precisa-carregar
     [
@@ -226,7 +226,7 @@ to go
 
   ]
 
-  if hora = 23
+  if ticks >= 5 * 1440
   [
     stop
   ]
@@ -365,7 +365,7 @@ Carros carregando
 hora
 carros
 0.0
-23.0
+46.0
 0.0
 10.0
 true
@@ -394,7 +394,7 @@ Carros em casa
 hora
 carros
 0.0
-23.0
+46.0
 0.0
 10.0
 true
@@ -414,7 +414,7 @@ carga
 0.0
 46.0
 0.0
-30.0
+3000.0
 true
 true
 "" ""
