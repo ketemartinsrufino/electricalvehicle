@@ -226,7 +226,7 @@ to go
 
   ]
 
-  if ticks >= 5 * 1440
+  if hora = 23
   [
     stop
   ]
@@ -365,7 +365,7 @@ Carros carregando
 hora
 carros
 0.0
-46.0
+23.0
 0.0
 10.0
 true
@@ -394,7 +394,7 @@ Carros em casa
 hora
 carros
 0.0
-46.0
+23.0
 0.0
 10.0
 true
@@ -412,9 +412,9 @@ Carga Transformador/Tempo
 hora
 carga
 0.0
-46.0
+23.0
 0.0
-3000.0
+30.0
 true
 true
 "" ""
