@@ -1,9 +1,12 @@
+extensions [time]
+
 globals
 [
-  demanda-carros-fora  ; lista com os percentuais de carros fora de casa
+  demanda-carros-fora     ; lista com os percentuais de carros fora de casa
   hora                    ; hora do dia
-  horas_pico              ; horas do dia em que ha maior uso
-
+  cargas-max-carros       ;
+  carga-minima-transformadores
+  incremento
 ]
 
 breed [transformadores transformador]
@@ -26,16 +29,20 @@ carros-own
   carga-armazenada
   localização
   estado
-  media-consumo-diario ; Deveria considerar o estado da bateria na chegada e saida de casa. Neste momento, iremos gerar um valor aleatorio
   carga-max
 ]
 
 to setup
   clear-all
 
+  ;set dt time:create "2016/05/26 00:00"
   set hora 0
                 ;hora dia [ 0 1 2 3 4 5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23]
   set demanda-carros-fora [ 3 3 2 2 3 5 30 40 50 60 70 85 75 60 80 93 95 96 99 90 60 50 45 20]
+
+  set cargas-max-carros [50  75  100]
+  set carga-minima-transformadores 100
+  set incremento 10
 
   set-patch-size 5
   ask patches [set pcolor white]
@@ -63,43 +70,30 @@ to setup
   create-transformadores número-de-transformadores
   [
     setxy round random-xcor round random-ycor
-    set size 8
+    set size 9
     set shape "dot"
-    set color red
-    set carga-max 3000
+    set color green
+    set carga-max 300
+    set carga-atual carga-minima-transformadores
     set label carga-atual
-
-    ifelse random 2 = 0
-    [
-      set xcor xcor - remainder xcor tamanho-da-quadra
-    ]
-    [
-      set ycor ycor - remainder ycor tamanho-da-quadra
-    ]
+    set label-color black
   ]
 
   create-carros número-de-casas
   [
-    let xd 0
-    let yd 0
     setxy round random-xcor round random-ycor
-    set color yellow
-    set estado "desligado"
+
+    set color blue
+    set estado "carregando"
+    set localização "em casa"
+
     set shape "car"
-    set size 3
-    set carga-max 10 + random 100
-    set media-consumo-diario random 60
+    set size 5
+    set carga-max item (random 3) cargas-max-carros
 
     set carga-armazenada 20 + random 40     ; [Artigo] A random state of charge between 20% and 60% is assigned to each vehicle
 
-    if carga-armazenada <= media-consumo-diario
-    [
-      set color blue
-      set estado "carregando"
-      set localização "em casa"
-    ]
-
-    if carga-armazenada = carga-max
+    if carga-armazenada >= carga-max
     [
       set color green
       set estado "carregado"
@@ -109,23 +103,22 @@ to setup
     [
       set color orange
       set shape "house"
-      set size 4
+      set size 7
     ]
 
-    let carga-carro carga-armazenada
+    set label carga-armazenada
+
     let transformador-mais-próximo min-one-of transformadores [distance myself]
-    ask transformador-mais-próximo [
-      set carga-atual carga-atual + carga-carro
-    ]
     create-link-to transformador-mais-próximo
     [
       set color blue
     ]
 
+
     ;--------------------
-      let carros-fora count carros with [localização = "fora"]
-  let carros-fora-percent (carros-fora / count carros) * 100
-  let carro-pode-sair (carros-fora-percent <= item hora demanda-carros-fora)
+    let carros-fora count carros with [localização = "fora"]
+    let carros-fora-percent (carros-fora / count carros) * 100
+    let carro-pode-sair (carros-fora-percent <= item hora demanda-carros-fora)
 
     ifelse carro-pode-sair
     [
@@ -134,9 +127,24 @@ to setup
       set estado "descarregando"
     ]
     [
+      ;se esta em casa, esta carregando
       set localização "em casa"
     ]
     ;--------------------
+
+    if estado = "carregando"
+    [
+     ask transformador-mais-próximo
+     [
+       set carga-atual carga-atual + incremento
+       set label carga-atual
+       if carga-atual >= carga-max
+       [
+          set color red
+          set shape "face sad"
+       ]
+     ]
+    ]
 
   ]
 
@@ -150,80 +158,115 @@ to go
     set hora 0
   ]
 
-  if remainder ticks 60 = 0
-  [
+  ;if remainder ticks 60 = 0
+  ;[
     set hora hora + 1
+  ;]
+
+
+  ; Coloca todos os carros em casa
+  ask carros [
+    set localização "em casa"
+    show-turtle
   ]
 
+  ; Coloca na rua o percentual planejado
+  let total-carros count carros
+  let qte-carros-deveriam-estar-rua total-carros * item hora demanda-carros-fora / 100
 
-  let carros-fora count carros with [localização = "fora"]
-  let carros-fora-percent (carros-fora / count carros) * 100
-  let carro-pode-sair (carros-fora-percent <= item hora demanda-carros-fora)
-
-  ifelse carro-pode-sair
-   [
-    ask one-of carros with [localização = "em casa"]
-    [
+  ask n-of qte-carros-deveriam-estar-rua carros [
       set localização "fora"
       hide-turtle
-    ]
-  ]
-  [
-    ask one-of carros with [localização = "fora"]
-    [
-      set localização "em casa"
-      show-turtle
-    ]
   ]
 
-  let diferenca 10
   ask carros with [localização = "em casa"]
   [
-    ; Se a carga armazenada eh menor que a media de consumo diario e menor que carga max, entao carregue o veiculo.
 
-    let precisa-carregar carga-armazenada < carga-max
-
-    ifelse precisa-carregar
+    ifelse carga-armazenada < carga-max
     [
-      set carga-armazenada carga-armazenada + diferenca
-      set color blue
-      set label carga-armazenada
+      let soma-da-carga carga-armazenada + incremento
+      let muda-valor-transformador false
+      let incremento-transformador incremento
 
-      if estado != "carregando" [
-        let transformador-mais-próximo min-one-of transformadores [distance myself]
-        ask transformador-mais-próximo [
-          set carga-atual carga-atual + diferenca
-        ]
+      if estado = "descarregando"
+      [
+        set muda-valor-transformador true
+      ]
+
+      ifelse soma-da-carga >= carga-max
+      [
+        set carga-armazenada carga-max
+        set color green
+        set estado "carregado"
+        set incremento-transformador (-1 * incremento)
+        set muda-valor-transformador true
+      ]
+      [
+        set carga-armazenada soma-da-carga
+        set color blue
         set estado "carregando"
       ]
-    ]
-    [
-      set color yellow
-      set estado "desligado"
-    ]
 
-    if carga-armazenada = carga-max
+      if muda-valor-transformador = true
+      [
+        let transformador-mais-próximo min-one-of transformadores [distance myself]
+
+        ask transformador-mais-próximo [
+
+          let nova-carga-transformador  carga-atual + incremento-transformador
+          if nova-carga-transformador >= carga-minima-transformadores [
+            set carga-atual nova-carga-transformador
+            set shape "dot"
+            set color green
+          ]
+
+          if carga-atual >= carga-max
+          [
+            show word "carga-atual -> " carga-atual
+            set color red
+            set shape "face sad"
+            set carga-atual nova-carga-transformador
+          ]
+          set label carga-atual
+        ]
+      ]
+    ]
     [
       set color green
       set estado "carregado"
     ]
+
+    set label carga-armazenada
+
   ]
 
   ask carros with [localização = "fora"]
   [
 
-    hide-turtle
-    set carga-armazenada carga-armazenada - diferenca
+    let nova-carga carga-armazenada - incremento
+    if nova-carga > 0
+    [
+      set carga-armazenada nova-carga
+    ]
 
+
+    ;So deve entrar aqui uma vez, quando o carro desplugar do carregador
     if estado != "descarregando" [
       let transformador-mais-próximo min-one-of transformadores [distance myself]
       ask transformador-mais-próximo [
-        set carga-atual carga-atual - diferenca
+        let carga-reduzida carga-atual - incremento
+        if carga-reduzida >= carga-minima-transformadores [
+          set carga-atual carga-reduzida
+        ]
       ]
     ]
 
     set estado "descarregando"
+    hide-turtle
 
+  ]
+  ask transformadores [
+    set label carga-atual
   ]
 
   if hora = 23
@@ -234,10 +277,10 @@ to go
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-480
-12
-1050
-593
+394
+10
+964
+591
 -1
 -1
 5.0
@@ -333,10 +376,10 @@ SLIDER
 121
 número-de-transformadores
 número-de-transformadores
-5
+1
 50
-5
-5
+1
+1
 1
 NIL
 HORIZONTAL
@@ -350,7 +393,7 @@ número-de-casas
 número-de-casas
 5
 100
-10
+25
 5
 1
 NIL
@@ -419,7 +462,7 @@ true
 true
 "" ""
 PENS
-"default" 1.0 0 -16777216 true "" "plotxy hora sum[carga-atual] of transformadores"
+"default" 1.0 1 -16777216 true "" "plotxy hora sum[carga-atual] of transformadores"
 
 MONITOR
 95

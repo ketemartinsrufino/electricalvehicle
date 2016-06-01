@@ -412,7 +412,7 @@ Carga Transformador/Tempo
 hora
 carga
 0.0
-46.0
+23.0
 0.0
 30.0
 true
