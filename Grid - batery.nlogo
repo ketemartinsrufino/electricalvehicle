@@ -8,6 +8,7 @@ globals
   carga-minima-transformadores
   tipos-baterias           ;15 kWh (PHEV), 25 kWh (EV)
   tipos-carregadores       ;3.6 kW, 7.4 kW
+  perfil-consumo-casas     ; 5 perfis de consumo [10 15 20 30 25]
 ]
 
 breed [transformadores transformador]
@@ -21,7 +22,10 @@ transformadores-own
 breed [casas casa]
 casas-own
 [
-  consumo
+  consumo-atual
+  consumo-min
+  consumo-max
+  qtd-pessoas
 ]
 
 breed [carros carro]
@@ -42,6 +46,7 @@ to setup
 
   set tipos-baterias [15 25] ;15 kWh (PHEV), 25 kWh (EV)
   set tipos-carregadores [4  7] ;3.6 kW, 7.4 kW
+  set perfil-consumo-casas [10 15 20 30 25] ; 5 perfis de consumo
 
   set carga-minima-transformadores 10
 
@@ -91,15 +96,13 @@ to setup
 
     set shape "car"
     set size 3
-    set carga-max item (random 2) tipos-baterias
-    set carregador (item (random 2) tipos-carregadores)
+    set carga-max (item random 2 tipos-baterias)
+    set carregador (item random 2 tipos-carregadores)
+    let transformador-mais-próximo min-one-of transformadores [distance myself]
 
     let percent (20 + (random 40)) / 100
     set carga-armazenada round (carga-max - ( percent * carga-max ))    ; [Artigo] A random state of charge between 20% and 60% is assigned to each vehicle
 
-    ;show word "percent: " percent
-    ;show word "carga-max: " carga-max
-    ;show word "carga-armazenada: " carga-armazenada
 
     if carga-armazenada >= carga-max
     [
@@ -107,21 +110,26 @@ to setup
       set estado "carregado"
     ]
 
+    ; cria a casa com um dos 5 perfis de consumo de energia baseado num numero aleatório de pessoas
     hatch-casas 1
     [
       set color 83
       set shape "house"
       set size 5
+      set qtd-pessoas 1 + random 4
+      set consumo-min (item qtd-pessoas perfil-consumo-casas) ;qto mais gente, maior o consumo minimo
+      set consumo-max consumo-min * qtd-pessoas
+      set consumo-atual consumo-min
+      aumenta-consumo consumo-min
     ]
 
     set label carga-armazenada
 
-    let transformador-mais-próximo min-one-of transformadores [distance myself]
+
     create-link-to transformador-mais-próximo
     [
       set color blue
     ]
-
 
     ;--------------------
     let carros-fora count carros with [localização = "fora"]
@@ -168,16 +176,28 @@ to go
     set hora 0
   ]
 
-  ;if remainder ticks 60 = 0
-  ;[
-    set hora hora + 1
-  ;]
-
+  set hora hora + 1
 
   ; Coloca todos os carros em casa
   ask carros [
     set localização "em casa"
-    show-turtle
+  ]
+
+  ask casas [
+    let diff (consumo-max - consumo-atual)
+    ifelse hora = 18
+    [
+      aumenta-consumo (consumo-max - consumo-atual)
+      set consumo-atual consumo-max
+    ]
+    [
+      if hora > 18 and hora < 21
+      [
+        show word "reduz-consumo " consumo-min
+        reduz-consumo (consumo-max - consumo-atual)
+        set consumo-atual consumo-min
+      ]
+    ]
   ]
 
   ; Coloca na rua o percentual planejado
@@ -191,6 +211,7 @@ to go
 
   ask carros with [localização = "em casa"]
   [
+    let minha-casa min-one-of casas [distance myself]
 
     ifelse carga-armazenada < carga-max
     [
@@ -219,26 +240,13 @@ to go
 
       if muda-valor-transformador = true
       [
-        let transformador-mais-próximo min-one-of transformadores [distance myself]
-
-        ask transformador-mais-próximo [
-
-          let nova-carga-transformador  carga-atual + incremento-transformador
-          if nova-carga-transformador >= carga-minima-transformadores [
-            set carga-atual round nova-carga-transformador
-            set shape "dot"
-            set color green
-          ]
-
-          if carga-atual >= carga-max
-          [
-            show word "carga-atual -> " carga-atual
-            set color red
-            set shape "face sad"
-            set carga-atual round nova-carga-transformador
-          ]
-          set label carga-atual
+        ;o consumo da casa aumenta, consequentemente, o consumo no transformador tb
+        ask minha-casa [
+          let diff ((consumo-max - consumo-min) / qtd-pessoas)
+          set incremento-transformador  diff + incremento-transformador
+          set consumo-atual consumo-atual + incremento-transformador
         ]
+        aumenta-consumo incremento-transformador
       ]
     ]
     [
@@ -247,29 +255,26 @@ to go
     ]
 
     set label carga-armazenada
-
   ]
 
   ask carros with [localização = "fora"]
   [
+    let minha-casa min-one-of casas [distance myself]
+    let decremento carregador
 
-    let nova-carga carga-armazenada - carregador
+    let nova-carga carga-armazenada - decremento
     if nova-carga > 0
     [
       set carga-armazenada nova-carga
     ]
 
-
     ;So deve entrar aqui uma vez, quando o carro desplugar do carregador
     if estado != "descarregando" [
-      let inc-transformador carregador
-      let transformador-mais-próximo min-one-of transformadores [distance myself]
-      ask transformador-mais-próximo [
-        let carga-reduzida carga-atual - inc-transformador
-        if carga-reduzida >= carga-minima-transformadores [
-          set carga-atual carga-reduzida
-        ]
+      ;o consumo da casa diminui, consequentemente, o consumo no transformador tb
+      ask minha-casa [
+        set consumo-atual consumo-atual - decremento
       ]
+      reduz-consumo decremento
     ]
 
     set estado "descarregando"
@@ -280,17 +285,52 @@ to go
     set label carga-atual
   ]
 
+
   if hora = 23
   [
     stop
   ]
   tick
 end
+
+to aumenta-consumo [incremento-transformador]
+  let transformador-mais-próximo min-one-of transformadores [distance myself]
+  ask transformador-mais-próximo [
+    let nova-carga-transformador carga-atual + incremento-transformador
+    if nova-carga-transformador >= carga-minima-transformadores [
+      set carga-atual round nova-carga-transformador
+      set shape "dot"
+      set color green
+    ]
+
+    if carga-atual >= carga-max
+    [
+      set color red
+      set shape "face sad"
+      set carga-atual round nova-carga-transformador
+    ]
+    set label carga-atual
+  ]
+end
+
+to reduz-consumo [incremento-transformador]
+  let transformador-mais-próximo min-one-of transformadores [distance myself]
+  ask transformador-mais-próximo [
+    let carga-reduzida carga-atual - incremento-transformador
+    if carga-reduzida >= carga-minima-transformadores [
+      set carga-atual carga-reduzida
+    ]
+    set label carga-atual
+    show word "carga-atual" carga-atual
+  ]
+end
+
+
 @#$#@#$#@
 GRAPHICS-WINDOW
-394
+667
 10
-964
+1237
 591
 -1
 -1
@@ -460,7 +500,7 @@ PENS
 PLOT
 10
 389
-381
+649
 541
 Carga Transformador/Tempo
 hora
@@ -473,7 +513,8 @@ true
 true
 "" ""
 PENS
-"default" 1.0 1 -16777216 true "" "plotxy hora sum[carga-atual] of transformadores"
+"carga-transformadores" 1.0 1 -16777216 true "" "plotxy hora sum[carga-atual] of transformadores"
+"consumo-casas" 1.0 0 -2674135 true "" "plotxy hora sum[consumo-atual] of casas"
 
 MONITOR
 95
