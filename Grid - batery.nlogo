@@ -36,6 +36,9 @@ carros-own
   estado
   carga-max
   carregador
+  carga-media
+  tempo-carregar-media
+  tempo-carregar-max
 ]
 
 to setup
@@ -46,7 +49,7 @@ to setup
 
   set tipos-baterias [15 25] ;15 kWh (PHEV), 25 kWh (EV)
   set tipos-carregadores [4  7] ;3.6 kW, 7.4 kW
-  set perfil-consumo-casas [10 15 20 30 25] ; 5 perfis de consumo
+  set perfil-consumo-casas [1 2 4 8 16] ; 5 perfis de consumo
 
   set carga-minima-transformadores 10
 
@@ -125,7 +128,6 @@ to setup
 
     set label carga-armazenada
 
-
     create-link-to transformador-mais-próximo
     [
       set color blue
@@ -183,23 +185,6 @@ to go
     set localização "em casa"
   ]
 
-  ask casas [
-    let diff (consumo-max - consumo-atual)
-    ifelse hora = 18
-    [
-      aumenta-consumo (consumo-max - consumo-atual)
-      set consumo-atual consumo-max
-    ]
-    [
-      if hora > 18 and hora < 21
-      [
-        show word "reduz-consumo " consumo-min
-        reduz-consumo (consumo-max - consumo-atual)
-        set consumo-atual consumo-min
-      ]
-    ]
-  ]
-
   ; Coloca na rua o percentual planejado
   let total-carros count carros
   let qte-carros-deveriam-estar-rua total-carros * item hora demanda-carros-fora / 100
@@ -208,6 +193,8 @@ to go
       set localização "fora"
       hide-turtle
   ]
+
+  carrega-casas
 
   ask carros with [localização = "em casa"]
   [
@@ -238,7 +225,7 @@ to go
         set estado "carregando"
       ]
 
-      if muda-valor-transformador = true
+     if muda-valor-transformador = true
       [
         ;o consumo da casa aumenta, consequentemente, o consumo no transformador tb
         ask minha-casa [
@@ -246,7 +233,8 @@ to go
           set incremento-transformador  diff + incremento-transformador
           set consumo-atual consumo-atual + incremento-transformador
         ]
-        aumenta-consumo incremento-transformador
+
+        consome-carga incremento-transformador
       ]
     ]
     [
@@ -293,6 +281,59 @@ to go
   tick
 end
 
+to carrega-casas
+  ask casas [
+    let diff (consumo-max - consumo-atual)
+    ifelse hora = 18
+    [
+      consome-carga diff
+      set consumo-atual consumo-max
+    ]
+    [
+      if hora > 18 and hora < 21
+      [
+        show word "reduz-consumo " consumo-min
+        reduz-consumo diff
+        set consumo-atual consumo-min
+      ]
+    ]
+  ]
+end
+
+to-report consome-veiculo [valor]
+
+  let uso-carro false
+  ask min-one-of carros [distance myself] [
+     set estado "descarregando"
+     let diff carga-armazenada - valor
+
+     ;if diff <= carga-media
+     ;[
+       set carga-armazenada carga-armazenada - valor
+       set uso-carro true
+     ;]
+  ]
+
+  report uso-carro
+end
+
+to consome-carga [incremento-transformador]
+  let usa-carga-carro false
+
+  let transformador-mais-próximo min-one-of transformadores [distance myself]
+  ask transformador-mais-próximo
+  [
+    ifelse carga-atual + incremento-transformador >= carga-max - (carga-max * 0.05)
+    [
+      set usa-carga-carro consome-veiculo incremento-transformador
+    ]
+    [
+      aumenta-consumo incremento-transformador
+    ]
+
+  ]
+end
+
 to aumenta-consumo [incremento-transformador]
   let transformador-mais-próximo min-one-of transformadores [distance myself]
   ask transformador-mais-próximo [
@@ -325,13 +366,12 @@ to reduz-consumo [incremento-transformador]
   ]
 end
 
-
 @#$#@#$#@
 GRAPHICS-WINDOW
-667
-10
-1237
-591
+666
+9
+1236
+590
 -1
 -1
 5.0
@@ -500,7 +540,7 @@ PENS
 PLOT
 10
 389
-649
+374
 541
 Carga Transformador/Tempo
 hora
@@ -513,8 +553,8 @@ true
 true
 "" ""
 PENS
-"carga-transformadores" 1.0 1 -16777216 true "" "plotxy hora sum[carga-atual] of transformadores"
-"consumo-casas" 1.0 0 -2674135 true "" "plotxy hora sum[consumo-atual] of casas"
+"transformadores" 1.0 1 -16777216 true "" "plotxy hora sum[carga-atual] of transformadores"
+"casas" 1.0 0 -2674135 true "" "plotxy hora sum[consumo-atual] of casas"
 
 MONITOR
 95
